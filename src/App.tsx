@@ -33,7 +33,7 @@ ChartJS.register(
 );
 
 const endpoint =
-  "https://script.google.com/macros/s/AKfycbxgr2JZuzytFX1Yeq6VJRI46_8K0h7gz2tGQa8fTsaCSMOFD_fGjQ7Niah2rSoZbdxM/exec";
+  "https://script.google.com/macros/s/AKfycbzI2faCFnfuN5qwYpJaHm8ZEKnqs2PlcwMHA9GqPnhqnuIbTGXCz7ANZZ3grg8xcr0h/exec";
 const SHEET_SEMESTER1 = "RekapSemester1";
 const SHEET_SEMESTER2 = "RekapSemester2";
 
