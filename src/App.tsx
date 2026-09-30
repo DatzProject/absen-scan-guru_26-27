@@ -2910,7 +2910,14 @@ const AttendanceTab: React.FC<{
 
     try {
       const formattedDate = formatDateDDMMYYYY(date);
-      const url = `${endpoint}?action=attendanceHistory`;
+      const params = new URLSearchParams({
+        action: "attendanceHistory",
+        tanggal: formattedDate,
+      });
+      if (selectedKelas !== "Semua") {
+        params.set("kelas", selectedKelas);
+      }
+      const url = `${endpoint}?${params.toString()}`;
       const response = await fetch(url, { method: "GET", mode: "cors" });
 
       if (response.ok) {
