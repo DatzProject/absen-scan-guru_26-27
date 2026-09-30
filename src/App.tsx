@@ -33,7 +33,7 @@ ChartJS.register(
 );
 
 const endpoint =
-  "https://script.google.com/macros/s/AKfycbxzgV9J4JURsYKfUzvI9cpPPQ41RlyS-hkg7QUiQU9p_hMHGQ6LRB9s-mUU0_9Ki7IL/exec";
+  "https://script.google.com/macros/s/AKfycbzmlmkwUmplkCu5x1bCbQrZ_wxHxv7y_-4pNftpuCFpunWdwfHiBZYIt99uEemgvoLd/exec";
 const SHEET_SEMESTER1 = "RekapSemester1";
 const SHEET_SEMESTER2 = "RekapSemester2";
 
@@ -7421,7 +7421,7 @@ const StudentAttendanceApp: React.FC = () => {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [schoolData, setSchoolData] = useState<SchoolData | null>(null);
+  const [statusGuru, setStatusGuru] = useState<string | null>(null);
   const [loadingStudents, setLoadingStudents] = useState(true);
 
   const fetchStudents = () => {
@@ -7470,22 +7470,19 @@ const StudentAttendanceApp: React.FC = () => {
       });
   };
 
-  const fetchSchoolData = () => {
-    fetch(`${endpoint}?action=schoolData`)
+  const fetchStatusGuru = () => {
+    fetch(`${endpoint}?action=statusGuru`)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
         return res.json();
       })
       .then((data) => {
-        if (data.success && data.data && data.data.length > 0) {
-          setSchoolData(data.data[0]);
-          console.log("School data loaded:", data.data[0]);
-        } else {
-          setSchoolData(null);
+        if (data.success) {
+          setStatusGuru(data.statusGuru);
         }
       })
       .catch((error) => {
-        console.error("Error fetching school data:", error);
+        console.error("Error fetching status guru:", error);
       });
   };
 
@@ -7495,12 +7492,12 @@ const StudentAttendanceApp: React.FC = () => {
 
   const handleRefresh = () => {
     fetchStudents();
-    fetchSchoolData();
+    fetchStatusGuru();
   };
 
   useEffect(() => {
     fetchStudents(); // langsung ambil data, tidak menunggu
-    fetchSchoolData();
+    fetchStatusGuru();
 
     const timer = setTimeout(() => {
       setIsLoading(false); // splash hanya tampilan
@@ -7513,8 +7510,9 @@ const StudentAttendanceApp: React.FC = () => {
     return <SplashScreen />;
   }
 
-  const isGuruKelas = schoolData?.statusGuru === "Guru Kelas";
-  const shouldShowJadwalMengajar = !isGuruKelas;
+  const isGuruKelas = statusGuru === "Guru Kelas";
+  // Menu hanya tampil setelah status diketahui dan bukan Guru Kelas
+  const shouldShowJadwalMengajar = statusGuru !== null && !isGuruKelas;
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
