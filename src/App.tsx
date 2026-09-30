@@ -33,7 +33,7 @@ ChartJS.register(
 );
 
 const endpoint =
-  "https://script.google.com/macros/s/AKfycbzI2faCFnfuN5qwYpJaHm8ZEKnqs2PlcwMHA9GqPnhqnuIbTGXCz7ANZZ3grg8xcr0h/exec";
+  "https://script.google.com/macros/s/AKfycbxzgV9J4JURsYKfUzvI9cpPPQ41RlyS-hkg7QUiQU9p_hMHGQ6LRB9s-mUU0_9Ki7IL/exec";
 const SHEET_SEMESTER1 = "RekapSemester1";
 const SHEET_SEMESTER2 = "RekapSemester2";
 
@@ -563,7 +563,8 @@ const StudentDataTab: React.FC<{
   students: Student[];
   onRefresh: () => void;
   uniqueClasses: string[];
-}> = ({ students, onRefresh, uniqueClasses }) => {
+  loading: boolean;
+}> = ({ students, onRefresh, uniqueClasses, loading }) => {
   const [nisn, setNisn] = useState("");
   const [nama, setNama] = useState("");
   const [kelas, setKelas] = useState("");
@@ -1768,7 +1769,11 @@ const StudentDataTab: React.FC<{
         <h3 className="text-lg font-semibold text-gray-700 mb-4">
           Daftar Siswa ({filteredStudents.length})
         </h3>
-        {filteredStudents.length === 0 ? (
+        {loading && students.length === 0 ? (
+          <p className="text-center text-gray-500 py-8">
+            ⏳ Memuat data siswa...
+          </p>
+        ) : filteredStudents.length === 0 ? (
           <p className="text-center text-gray-500 py-8">
             {searchQuery || selectedKelas !== "Semua"
               ? "Tidak ada siswa yang cocok dengan pencarian atau filter kelas."
@@ -7417,19 +7422,25 @@ const StudentAttendanceApp: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [schoolData, setSchoolData] = useState<SchoolData | null>(null);
+  const [loadingStudents, setLoadingStudents] = useState(true);
 
   const fetchStudents = () => {
+    setLoadingStudents(true);
     fetch(endpoint)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
         return res.json();
       })
-      .then((data: Student[]) => {
-        console.log("Data siswa yang diambil:", data);
+      .then((data) => {
+        // Jika GAS mengirim pesan error (bukan daftar siswa)
+        if (!Array.isArray(data)) {
+          throw new Error(data?.message || "Format data siswa tidak valid");
+        }
+
         setStudents(data);
 
         const classSet = new Set<string>();
-        data.forEach((student) => {
+        data.forEach((student: Student) => {
           if (student.kelas != null) {
             const kelasValue = String(student.kelas).trim();
             if (
@@ -7450,10 +7461,12 @@ const StudentAttendanceApp: React.FC = () => {
           return a.localeCompare(b);
         });
         setUniqueClasses(["Semua", ...classes]);
+        setLoadingStudents(false);
       })
       .catch((error) => {
         console.error("Error fetch:", error);
         alert("❌ Gagal mengambil data siswa. Cek console untuk detail.");
+        setLoadingStudents(false);
       });
   };
 
@@ -7486,12 +7499,12 @@ const StudentAttendanceApp: React.FC = () => {
   };
 
   useEffect(() => {
-    // Simulasi loading selama 3 detik
+    fetchStudents(); // langsung ambil data, tidak menunggu
+    fetchSchoolData();
+
     const timer = setTimeout(() => {
-      setIsLoading(false);
-      fetchStudents();
-      fetchSchoolData();
-    }, 3000);
+      setIsLoading(false); // splash hanya tampilan
+    }, 2000);
 
     return () => clearTimeout(timer);
   }, []);
@@ -7599,8 +7612,9 @@ const StudentAttendanceApp: React.FC = () => {
           {activeTab === "studentData" && (
             <StudentDataTab
               students={students}
-              onRefresh={fetchStudents}
+              onRefresh={() => setTimeout(fetchStudents, 1500)}
               uniqueClasses={uniqueClasses}
+              loading={loadingStudents}
             />
           )}
           {activeTab === "attendance" && (
