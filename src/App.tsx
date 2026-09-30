@@ -33,7 +33,7 @@ ChartJS.register(
 );
 
 const endpoint =
-  "https://script.google.com/macros/s/AKfycbzmlmkwUmplkCu5x1bCbQrZ_wxHxv7y_-4pNftpuCFpunWdwfHiBZYIt99uEemgvoLd/exec";
+  "https://script.google.com/macros/s/AKfycbwbUSb6ZL4afbphvN9U8__QSIH1tP1Up0DSBQyHSnsRQGfWzfscomP2RzE_TnzHsTkz/exec";
 const SHEET_SEMESTER1 = "RekapSemester1";
 const SHEET_SEMESTER2 = "RekapSemester2";
 
@@ -2104,7 +2104,8 @@ const StudentDataTab: React.FC<{
 const AttendanceTab: React.FC<{
   students: Student[];
   onRecapRefresh: () => void;
-}> = ({ students, onRecapRefresh }) => {
+  statusGuru?: string | null;
+}> = ({ students, onRecapRefresh, statusGuru }) => {
   const [attendance, setAttendance] = useState<AttendanceRecord>({});
 
   const getLocalDate = () => {
@@ -2995,6 +2996,7 @@ const AttendanceTab: React.FC<{
   }, [date, students, attendance]);
 
   useEffect(() => {
+    if (statusGuru) return; // sudah dimuat induk, tidak perlu fetch DataSekolah lagi
     fetch(`${endpoint}?action=schoolData`)
       .then((res) => (res.ok ? res.json() : Promise.reject()))
       .then((data) => {
@@ -3293,7 +3295,8 @@ const AttendanceTab: React.FC<{
   };
 
   const isBukanJadwalMengajar = (dateStr: string): boolean => {
-    if (schoolData?.statusGuru === "Guru Kelas") return false;
+    if ((statusGuru || schoolData?.statusGuru || "Guru Kelas") === "Guru Kelas")
+      return false;
     if (selectedKelas === "Semua") return false;
     const jadwal = jadwalMengajar.find((j) => j.kelas === selectedKelas);
     if (!jadwal) return true;
@@ -7626,6 +7629,7 @@ const StudentAttendanceApp: React.FC = () => {
             <AttendanceTab
               students={students}
               onRecapRefresh={handleRecapRefresh}
+              statusGuru={statusGuru}
             />
           )}
           {activeTab === "recap" && (
