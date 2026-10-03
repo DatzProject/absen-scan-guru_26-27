@@ -2105,7 +2105,8 @@ const AttendanceTab: React.FC<{
   students: Student[];
   onRecapRefresh: () => void;
   statusGuru?: string | null;
-}> = ({ students, onRecapRefresh, statusGuru }) => {
+  role?: Role | null;
+}> = ({ students, onRecapRefresh, statusGuru, role }) => {
   const [attendance, setAttendance] = useState<AttendanceRecord>({});
 
   const getLocalDate = () => {
@@ -2150,6 +2151,7 @@ const AttendanceTab: React.FC<{
   const [existingAttendanceData, setExistingAttendanceData] = useState<any[]>(
     []
   );
+  const [allAttendanceForDate, setAllAttendanceForDate] = useState<any[]>([]);
   const [fotoAbsensiUrl, setFotoAbsensiUrl] = useState<string | null>(null);
   const [isUploadingFoto, setIsUploadingFoto] = useState<boolean>(false);
   const [previewFoto, setPreviewFoto] = useState<string | null>(null);
@@ -2164,6 +2166,11 @@ const AttendanceTab: React.FC<{
     [studentId: string]: { status: AttendanceStatus; keterangan: string };
   }>({});
   const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
+  const [selectedDeleteIds, setSelectedDeleteIds] = useState<Set<string>>(
+    new Set()
+  );
+  const [isDeletingAttendance, setIsDeletingAttendance] =
+    useState<boolean>(false);
 
   const getFotoUrlAttendance = (fotoUrl: string | undefined): string => {
     if (!fotoUrl) return "";
@@ -2903,11 +2910,8 @@ const AttendanceTab: React.FC<{
     };
   }, []);
 
-  // Load existing attendance data
   const loadExistingAttendanceData = async () => {
     setIsLoadingExistingData(true);
-    setExistingStudentIds(new Set());
-    setExistingAttendanceData([]);
 
     try {
       const formattedDate = formatDateDDMMYYYY(date);
@@ -2915,61 +2919,19 @@ const AttendanceTab: React.FC<{
         action: "attendanceHistory",
         tanggal: formattedDate,
       });
-      if (selectedKelas !== "Semua") {
-        params.set("kelas", selectedKelas);
-      }
-      const url = `${endpoint}?${params.toString()}`;
-      const response = await fetch(url, { method: "GET", mode: "cors" });
+      const response = await fetch(`${endpoint}?${params.toString()}`, {
+        method: "GET",
+        mode: "cors",
+      });
 
       if (response.ok) {
         const result = await response.json();
         if (result.success && result.data) {
-          const allAttendanceData = result.data;
-          const filteredData = allAttendanceData.filter((record: any) => {
-            const matchesDate = record.tanggal === formattedDate;
-            const matchesClass =
-              selectedKelas === "Semua" ||
-              String(record.kelas).trim() === selectedKelas;
-            return matchesDate && matchesClass;
-          });
-
-          setExistingAttendanceData(filteredData);
-
-          const existingAttendanceRecord: { [key: string]: AttendanceStatus } =
-            {};
-          const existingKeteranganRecord: { [key: string]: string } = {}; // TAMBAHKAN
-          const existingIds = new Set<string>();
-
-          const studentsToCheck =
-            selectedKelas === "Semua" ? students : filteredStudents;
-          studentsToCheck.forEach((student) => {
-            const existingRecord = filteredData.find(
-              (record: any) => record.nama === student.name
-            );
-            if (existingRecord) {
-              existingAttendanceRecord[student.id] =
-                existingRecord.status as AttendanceStatus;
-              existingKeteranganRecord[student.id] =
-                existingRecord.keterangan || ""; // TAMBAHKAN
-              existingIds.add(student.id);
-            } else {
-              existingAttendanceRecord[student.id] = "Hadir";
-              existingKeteranganRecord[student.id] = ""; // TAMBAHKAN
-            }
-          });
-
-          setAttendance((prev) => ({
-            ...prev,
-            [date]: existingAttendanceRecord,
-          }));
-
-          // TAMBAHKAN: Set keterangan state
-          setKeterangan((prev) => ({
-            ...prev,
-            [date]: existingKeteranganRecord,
-          }));
-
-          setExistingStudentIds(existingIds);
+          setAllAttendanceForDate(
+            result.data.filter(
+              (record: any) => record.tanggal === formattedDate
+            )
+          );
         }
       }
     } catch (error) {
@@ -2978,19 +2940,63 @@ const AttendanceTab: React.FC<{
     setIsLoadingExistingData(false);
   };
 
+  // Fetch hanya saat tanggal / data siswa berubah (BUKAN saat kelas berubah)
   useEffect(() => {
     if (students.length > 0) {
+      setAllAttendanceForDate([]); // buang data tanggal sebelumnya
       loadExistingAttendanceData();
+    }
+  }, [date, students]);
+
+  // Reset state scan tetap mengikuti perubahan kelas seperti sebelumnya
+  useEffect(() => {
+    if (students.length > 0) {
       setScannedStudentPhotos([]);
       setScannedStudents(new Set());
-      sendingLockRef.current = new Set(); // ← TAMBAHKAN
+      sendingLockRef.current = new Set();
     }
   }, [date, selectedKelas, students]);
 
   useEffect(() => {
+    if (students.length === 0) return;
+
+    const filteredData = allAttendanceForDate.filter(
+      (record: any) =>
+        selectedKelas === "Semua" ||
+        String(record.kelas).trim() === selectedKelas
+    );
+
+    setExistingAttendanceData(filteredData);
+
+    const existingAttendanceRecord: { [key: string]: AttendanceStatus } = {};
+    const existingKeteranganRecord: { [key: string]: string } = {};
+    const existingIds = new Set<string>();
+
+    const studentsToCheck =
+      selectedKelas === "Semua" ? students : filteredStudents;
+
+    studentsToCheck.forEach((student) => {
+      const existingRecord = filteredData.find(
+        (record: any) => record.nama === student.name
+      );
+      if (existingRecord) {
+        existingAttendanceRecord[student.id] =
+          existingRecord.status as AttendanceStatus;
+        existingKeteranganRecord[student.id] = existingRecord.keterangan || "";
+        existingIds.add(student.id);
+      } else {
+        existingKeteranganRecord[student.id] = "";
+      }
+    });
+
+    setAttendance((prev) => ({ ...prev, [date]: existingAttendanceRecord }));
+    setKeterangan((prev) => ({ ...prev, [date]: existingKeteranganRecord }));
+    setExistingStudentIds(existingIds);
+  }, [allAttendanceForDate, selectedKelas, students]);
+
+  useEffect(() => {
     if (students.length && !attendance[date]) {
       const init: { [key: string]: AttendanceStatus } = {};
-      students.forEach((s) => (init[s.id] = "Hadir"));
       setAttendance((prev) => ({ ...prev, [date]: init }));
     }
   }, [date, students, attendance]);
@@ -3166,16 +3172,92 @@ const AttendanceTab: React.FC<{
     }
   };
 
+  useEffect(() => {
+    setSelectedDeleteIds(new Set());
+  }, [date, selectedKelas]);
+
+  const toggleSelectDelete = (sid: string) => {
+    setSelectedDeleteIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(sid)) next.delete(sid);
+      else next.add(sid);
+      return next;
+    });
+  };
+
+  const handleDeleteAttendance = async (ids: string[]) => {
+    if (role !== "Guru") return;
+
+    const targets = students.filter(
+      (s) => ids.includes(s.id) && existingStudentIds.has(s.id)
+    );
+    if (targets.length === 0) {
+      alert("⚠️ Tidak ada data absensi yang dipilih.");
+      return;
+    }
+
+    const label =
+      targets.length === 1 ? targets[0].name : `${targets.length} siswa`;
+    if (
+      !confirm(
+        `Hapus data absensi ${label} tanggal ${formatDateDDMMYYYY(
+          date
+        )}?\n\nTindakan ini tidak dapat dibatalkan.`
+      )
+    ) {
+      return;
+    }
+
+    setIsDeletingAttendance(true);
+    try {
+      await fetch(endpoint, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "bulkUpdateAttendance",
+          updates: targets.map((s) => ({
+            tanggal: formatDateDDMMYYYY(date),
+            nisn: s.nisn,
+            status: "",
+          })),
+        }),
+      });
+
+      // Reset state scan agar siswa bisa diabsen ulang
+      targets.forEach((s) => sendingLockRef.current.delete(s.nisn));
+      const targetIds = new Set(targets.map((s) => s.id));
+      setScannedStudents((prev) => {
+        const next = new Set(prev);
+        targetIds.forEach((id) => next.delete(id));
+        return next;
+      });
+      setScannedStudentPhotos((prev) =>
+        prev.filter((item) => !targetIds.has(item.student.id))
+      );
+
+      setSelectedDeleteIds(new Set());
+      alert(`✅ Data absensi ${label} berhasil dihapus!`);
+      loadExistingAttendanceData();
+      onRecapRefresh();
+    } catch (error) {
+      console.error("Gagal hapus absensi:", error);
+      alert("❌ Gagal menghapus data absensi.");
+    } finally {
+      setIsDeletingAttendance(false);
+    }
+  };
+
   const handleSave = () => {
     setIsSaving(true);
     const formattedDate = formatDateDDMMYYYY(date);
     const studentsToSave = (
       selectedKelas === "Semua" ? students : filteredStudents
-    ).filter((s) => !existingStudentIds.has(s.id));
+    ).filter((s) => !existingStudentIds.has(s.id) && attendance[date]?.[s.id]);
 
     if (studentsToSave.length === 0) {
       alert(
-        "✅ Semua siswa sudah diabsen. Tidak ada data baru untuk disimpan."
+        "⚠️ Belum ada status absensi yang dipilih. Pilih status siswa terlebih dahulu."
       );
       setIsSaving(false);
       return;
@@ -3233,10 +3315,23 @@ const AttendanceTab: React.FC<{
     Alpha: "bg-red-500",
   };
 
+  const isSiswa = role === "Siswa";
+
+  // Siswa dianggap punya data jika sudah ada di database atau baru saja discan
+  const hasData = (id: string) =>
+    existingStudentIds.has(id) || scannedStudents.has(id);
+
+  // Status yang ditampilkan: untuk Siswa tanpa data → null (tidak ada tombol aktif)
+  const getDisplayStatus = (id: string): AttendanceStatus | null => {
+    if (isSiswa && !hasData(id)) return null;
+    return attendance[date]?.[id] || null;
+  };
+
   const getAttendanceSummary = (): StatusSummary => {
     const summary: StatusSummary = { Hadir: 0, Izin: 0, Sakit: 0, Alpha: 0 };
     filteredStudents.forEach((s) => {
-      const status = (attendance[date]?.[s.id] || "Hadir") as AttendanceStatus;
+      const status = getDisplayStatus(s.id);
+      if (!status) return; // belum ada data → tidak dihitung
       summary[status]++;
     });
     return summary;
@@ -4149,31 +4244,33 @@ const AttendanceTab: React.FC<{
               </div>
             </div>
 
-            {existingStudentIds.size > 0 && !isLoadingExistingData && (
-              <div className="flex justify-end mb-2">
-                <button
-                  onClick={handleOpenEditModal}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "6px",
-                    padding: "8px 14px",
-                    backgroundColor: "#f97316",
-                    color: "#ffffff",
-                    fontWeight: 600,
-                    fontSize: "13px",
-                    borderRadius: "8px",
-                    border: "none",
-                    cursor: "pointer",
-                    boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-                    whiteSpace: "nowrap", // ← cegah teks wrap/terpotong
-                    minWidth: "fit-content", // ← pastikan tombol tidak menyusut
-                  }}
-                >
-                  ✏️ Edit Data Absensi ({existingStudentIds.size} siswa)
-                </button>
-              </div>
-            )}
+            {role === "Guru" &&
+              existingStudentIds.size > 0 &&
+              !isLoadingExistingData && (
+                <div className="flex justify-end mb-2">
+                  <button
+                    onClick={handleOpenEditModal}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      padding: "8px 14px",
+                      backgroundColor: "#f97316",
+                      color: "#ffffff",
+                      fontWeight: 600,
+                      fontSize: "13px",
+                      borderRadius: "8px",
+                      border: "none",
+                      cursor: "pointer",
+                      boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+                      whiteSpace: "nowrap", // ← cegah teks wrap/terpotong
+                      minWidth: "fit-content", // ← pastikan tombol tidak menyusut
+                    }}
+                  >
+                    ✏️ Edit Data Absensi ({existingStudentIds.size} siswa)
+                  </button>
+                </div>
+              )}
 
             {isLoadingExistingData && (
               <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
@@ -4204,6 +4301,53 @@ const AttendanceTab: React.FC<{
                 </div>
               </div>
             )}
+
+            {role === "Guru" &&
+              existingStudentIds.size > 0 &&
+              !isLoadingExistingData && (
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={
+                        filteredStudents.filter((s) =>
+                          existingStudentIds.has(s.id)
+                        ).length > 0 &&
+                        filteredStudents
+                          .filter((s) => existingStudentIds.has(s.id))
+                          .every((s) => selectedDeleteIds.has(s.id))
+                      }
+                      onChange={(e) => {
+                        const ids = filteredStudents
+                          .filter((s) => existingStudentIds.has(s.id))
+                          .map((s) => s.id);
+                        setSelectedDeleteIds(
+                          e.target.checked ? new Set(ids) : new Set()
+                        );
+                      }}
+                    />
+                    Pilih semua
+                  </label>
+                  <button
+                    onClick={() =>
+                      handleDeleteAttendance(Array.from(selectedDeleteIds))
+                    }
+                    disabled={
+                      selectedDeleteIds.size === 0 || isDeletingAttendance
+                    }
+                    className={`px-3 py-1 rounded-lg text-sm font-medium text-white ${
+                      selectedDeleteIds.size === 0 || isDeletingAttendance
+                        ? "bg-gray-400 cursor-not-allowed"
+                        : "bg-red-600 hover:bg-red-700"
+                    }`}
+                  >
+                    {isDeletingAttendance
+                      ? "⏳ Menghapus..."
+                      : `🗑️ Hapus Terpilih (${selectedDeleteIds.size})`}
+                  </button>
+                </div>
+              )}
 
             <div className="space-y-4 mb-6 overflow-x-auto">
               <table className="w-full border-collapse">
@@ -4273,16 +4417,17 @@ const AttendanceTab: React.FC<{
                                   className={`px-1 py-0.5 rounded-lg text-xs font-medium transition-colors ${
                                     isLoadingExistingData
                                       ? "bg-gray-300 text-gray-400 cursor-not-allowed opacity-50"
-                                      : attendance[date]?.[s.id] === status
+                                      : getDisplayStatus(s.id) === status
                                       ? `${statusColor[status]} text-white`
-                                      : isExisting || isScanned
+                                      : isExisting || isScanned || isSiswa
                                       ? "bg-gray-200 text-gray-500 cursor-not-allowed"
                                       : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-100"
                                   }`}
                                   disabled={
                                     isExisting ||
                                     isLoadingExistingData ||
-                                    isScanned
+                                    isScanned ||
+                                    isSiswa
                                   }
                                 >
                                   {status}
@@ -4302,21 +4447,49 @@ const AttendanceTab: React.FC<{
                                 setKeteranganValue(s.id, e.target.value)
                               }
                               disabled={
-                                isExisting || isLoadingExistingData || isScanned
+                                isExisting ||
+                                isLoadingExistingData ||
+                                isScanned ||
+                                isSiswa
                               }
                               className={`w-full px-2 py-1 text-xs border rounded ${
-                                isExisting || isLoadingExistingData || isScanned
+                                isExisting ||
+                                isLoadingExistingData ||
+                                isScanned ||
+                                isSiswa
                                   ? "bg-gray-100 text-gray-500 cursor-not-allowed"
                                   : "border-gray-300 focus:border-blue-500 focus:outline-none"
                               }`}
                             />
                             {isExisting && (
-                              <p className="text-xs text-gray-400 mt-1">
-                                🕐{" "}
-                                {existingAttendanceData.find(
-                                  (r: any) => r.nama === s.name
-                                )?.jam || "-"}
-                              </p>
+                              <div className="flex items-center justify-between mt-1">
+                                <p className="text-xs text-gray-400">
+                                  🕐{" "}
+                                  {existingAttendanceData.find(
+                                    (r: any) => r.nama === s.name
+                                  )?.jam || "-"}
+                                </p>
+                                {role === "Guru" && (
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="checkbox"
+                                      className="h-4 w-4"
+                                      checked={selectedDeleteIds.has(s.id)}
+                                      onChange={() => toggleSelectDelete(s.id)}
+                                      disabled={isDeletingAttendance}
+                                    />
+                                    <button
+                                      onClick={() =>
+                                        handleDeleteAttendance([s.id])
+                                      }
+                                      disabled={isDeletingAttendance}
+                                      className="text-xs px-2 py-0.5 bg-red-500 hover:bg-red-600 text-white rounded disabled:bg-gray-400"
+                                    >
+                                      🗑️ Hapus
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             )}
                           </div>
                         </td>
@@ -4328,19 +4501,21 @@ const AttendanceTab: React.FC<{
             </div>
 
             {!allStudentsHaveData && !isLoadingExistingData ? (
-              <button
-                onClick={handleSave}
-                disabled={isSaving}
-                className={`w-full py-3 rounded-lg font-bold shadow-md transition-colors ${
-                  isSaving
-                    ? "bg-blue-400 cursor-not-allowed"
-                    : "bg-blue-600 hover:bg-blue-700"
-                } text-white`}
-              >
-                {isSaving
-                  ? "⏳ Menyimpan..."
-                  : "💾 Simpan Absensi Manual (Siswa Belum Scan)"}
-              </button>
+              role === "Guru" ? (
+                <button
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className={`w-full py-3 rounded-lg font-bold shadow-md transition-colors ${
+                    isSaving
+                      ? "bg-blue-400 cursor-not-allowed"
+                      : "bg-blue-600 hover:bg-blue-700"
+                  } text-white`}
+                >
+                  {isSaving
+                    ? "⏳ Menyimpan..."
+                    : "💾 Simpan Absensi Manual (Siswa Belum Scan)"}
+                </button>
+              ) : null
             ) : !isLoadingExistingData ? (
               <div className="w-full py-3 rounded-lg font-bold text-center bg-green-100 text-green-700 border border-green-300">
                 ✅ Semua siswa sudah diabsen untuk tanggal ini
@@ -7413,6 +7588,76 @@ const JadwalMengajarTab: React.FC<{
   );
 };
 
+type Role = "Guru" | "Siswa";
+
+const PASSWORDS: Record<Role, string> = {
+  Guru: "1234",
+  Siswa: "1111",
+};
+
+// Tab yang boleh dibuka oleh Siswa
+const SISWA_TABS = ["attendance", "recap", "semesterRecap", "graph"];
+
+const LoginPage: React.FC<{ onLogin: (role: Role) => void }> = ({
+  onLogin,
+}) => {
+  const [username, setUsername] = useState<Role>("Guru");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
+  const handleLogin = () => {
+    if (password === PASSWORDS[username]) {
+      setError("");
+      onLogin(username);
+    } else {
+      setError("❌ Password salah!");
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-sm">
+        <h1 className="text-2xl font-bold text-center text-blue-700 mb-6">
+          🔐 Login
+        </h1>
+
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Username
+        </label>
+        <select
+          value={username}
+          onChange={(e) => setUsername(e.target.value as Role)}
+          className="w-full border border-gray-300 px-4 py-2 rounded-lg mb-4 bg-white"
+        >
+          <option value="Guru">Guru</option>
+          <option value="Siswa">Siswa</option>
+        </select>
+
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Password
+        </label>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+          placeholder="Masukkan password"
+          className="w-full border border-gray-300 px-4 py-2 rounded-lg mb-2"
+        />
+
+        {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
+
+        <button
+          onClick={handleLogin}
+          className="w-full mt-2 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+        >
+          Masuk
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const StudentAttendanceApp: React.FC = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [uniqueClasses, setUniqueClasses] = useState<string[]>(["Semua"]);
@@ -7427,12 +7672,31 @@ const StudentAttendanceApp: React.FC = () => {
     | "tanggalMerah"
     | "jadwalMengajar"
     | "clearData"
-  >("studentData");
+  >(() =>
+    localStorage.getItem("authRole") === "Siswa" ? "attendance" : "studentData"
+  );
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [statusGuru, setStatusGuru] = useState<string | null>(null);
   const [loadingStudents, setLoadingStudents] = useState(true);
+  const [role, setRole] = useState<Role | null>(() => {
+    const saved = localStorage.getItem("authRole");
+    return saved === "Guru" || saved === "Siswa" ? saved : null;
+  });
+
+  const handleLogin = (r: Role) => {
+    localStorage.setItem("authRole", r);
+    setRole(r);
+    setActiveTab(r === "Siswa" ? "attendance" : "studentData");
+    setIsSidebarOpen(false);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("authRole");
+    setRole(null);
+    setIsSidebarOpen(false);
+  };
 
   const fetchStudents = () => {
     setLoadingStudents(true);
@@ -7520,6 +7784,10 @@ const StudentAttendanceApp: React.FC = () => {
     return <SplashScreen />;
   }
 
+  if (!role) {
+    return <LoginPage onLogin={handleLogin} />;
+  }
+
   const isGuruKelas = statusGuru === "Guru Kelas";
   // Menu hanya tampil setelah status diketahui dan bukan Guru Kelas
   const shouldShowJadwalMengajar = statusGuru !== null && !isGuruKelas;
@@ -7554,31 +7822,40 @@ const StudentAttendanceApp: React.FC = () => {
             ? [{ tab: "jadwalMengajar", label: "🗓️ Jadwal Mengajar" }]
             : []),
           { tab: "clearData", label: "🗑️ Hapus Data" },
-        ].map(({ tab, label }) => (
-          <button
-            key={tab}
-            onClick={() => {
-              setActiveTab(
-                tab as
-                  | "schoolData"
-                  | "studentData"
-                  | "attendance"
-                  | "recap"
-                  | "graph"
-                  | "semesterRecap"
-                  | "clearData"
-              );
-              setIsSidebarOpen(false);
-            }}
-            className={`w-full text-left py-2 px-4 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-              activeTab === tab
-                ? "bg-blue-600 text-white"
-                : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+        ]
+          .filter(({ tab }) => role === "Guru" || SISWA_TABS.includes(tab))
+          .map(({ tab, label }) => (
+            <button
+              key={tab}
+              onClick={() => {
+                setActiveTab(
+                  tab as
+                    | "schoolData"
+                    | "studentData"
+                    | "attendance"
+                    | "recap"
+                    | "graph"
+                    | "semesterRecap"
+                    | "clearData"
+                );
+                setIsSidebarOpen(false);
+              }}
+              className={`w-full text-left py-2 px-4 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                activeTab === tab
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-600 hover:bg-gray-100"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+
+        <button
+          onClick={handleLogout}
+          className="w-full text-left py-2 px-4 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 flex items-center gap-2"
+        >
+          🚪 Logout ({role})
+        </button>
       </aside>
 
       {/* Hamburger Menu Button */}
@@ -7630,6 +7907,7 @@ const StudentAttendanceApp: React.FC = () => {
               students={students}
               onRecapRefresh={handleRecapRefresh}
               statusGuru={statusGuru}
+              role={role}
             />
           )}
           {activeTab === "recap" && (
