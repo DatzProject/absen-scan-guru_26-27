@@ -33,7 +33,7 @@ ChartJS.register(
 );
 
 const endpoint =
-  "https://script.google.com/macros/s/AKfycbwtOkBKv7mhK8PpMUk7RFpHTwhFHtphn--YosPA-Ob3gEOMjyS_tkGcTrlN1ViotGY3/exec";
+  "https://script.google.com/macros/s/AKfycbzOLEviGhQ_CGernoN7q_uZLoU3zsiqtMrL__rpw3nUYDGRTLmd7rBzNH7oAX-9kM3f/exec";
 const SHEET_SEMESTER1 = "RekapSemester1";
 const SHEET_SEMESTER2 = "RekapSemester2";
 
@@ -7990,6 +7990,9 @@ const DaftarHadirTab: React.FC<{
   >([]);
   const [jadwalMengajar, setJadwalMengajar] = useState<JadwalMengajar[]>([]);
   const [loadingJadwal, setLoadingJadwal] = useState<boolean>(false);
+  const [loadingMonth, setLoadingMonth] = useState<boolean>(false);
+  const cacheRef = useRef<Map<string, AttendanceHistory[]>>(new Map());
+  const requestIdRef = useRef(0);
 
   const [customColors, setCustomColors] = useState({
     hariMinggu: "#DC3545", // Merah default
@@ -8260,38 +8263,32 @@ const DaftarHadirTab: React.FC<{
     return days;
   }, [attendanceByDateMemo, daysInMonth]);
 
-  const fetchAttendanceData = async () => {
-    setLoading(true);
+  const fetchAttendanceData = async (force = false) => {
+    const key = `${selectedYear}-${selectedMonth}`;
+
+    // Pakai cache jika bulan ini sudah pernah dimuat
+    if (!force && cacheRef.current.has(key)) {
+      setAttendanceData(cacheRef.current.get(key)!);
+      setLoading(false);
+      return;
+    }
+
+    const myId = ++requestIdRef.current;
+    setLoadingMonth(true);
     try {
-      const res = await fetch(`${endpoint}?action=attendanceHistory`);
+      const res = await fetch(
+        `${endpoint}?action=attendanceHistory&bulan=${selectedMonth}&tahun=${selectedYear}`
+      );
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const data = await res.json();
+
+      // Respons usang (user sudah pindah bulan lagi), abaikan
+      if (myId !== requestIdRef.current) return;
+
       if (data.success) {
-        console.log("=== RAW DATA FROM SERVER ===");
-        console.log("Total records:", data.data.length);
-        // Log sample data (tetap jika ingin debug)
-        if (data.data.length > 0) {
-          console.log("Sample records (first 5):");
-          data.data.slice(0, 5).forEach((record: any, index: number) => {
-            console.log(`Record ${index}:`, {
-              tanggal: record.tanggal,
-              nama: record.nama,
-              kelas: record.kelas,
-              nisn: record.nisn,
-              status: record.status,
-            });
-          });
-        }
-        const validData = filterValidAttendance(data.data || []);
-        console.log("Valid records after filter:", validData.length);
-        // Cek unique NISN dan dates (tetap jika ingin debug)
-        const uniqueNISN = new Set(
-          validData.map((r) => String(r.nisn || "").trim())
-        );
-        console.log("Unique NISN in attendance data:", Array.from(uniqueNISN));
-        const uniqueDates = new Set(validData.map((r) => r.tanggal));
-        console.log("Unique dates:", Array.from(uniqueDates).sort());
-        setAttendanceData(validData);
+        const valid = filterValidAttendance(data.data || []);
+        cacheRef.current.set(key, valid);
+        setAttendanceData(valid);
       } else {
         alert("❌ Gagal memuat data absensi: " + data.message);
         setAttendanceData([]);
@@ -8300,7 +8297,10 @@ const DaftarHadirTab: React.FC<{
       console.error("Error fetch:", error);
       alert("❌ Gagal memuat data absensi. Cek console untuk detail.");
     } finally {
-      setLoading(false);
+      if (myId === requestIdRef.current) {
+        setLoadingMonth(false);
+        setLoading(false);
+      }
     }
   };
 
@@ -8333,63 +8333,6 @@ const DaftarHadirTab: React.FC<{
         alert("❌ Gagal memuat data sekolah. Cek console untuk detail.");
       });
   }, []); // Fetch sekali saat mount
-
-  useEffect(() => {
-    setLoading(true);
-    fetch(`${endpoint}?action=attendanceHistory`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-        return res.json();
-      })
-      .then((data) => {
-        if (data.success) {
-          console.log("=== RAW DATA FROM SERVER ===");
-          console.log("Total records:", data.data.length);
-
-          // Log sample data
-          if (data.data.length > 0) {
-            console.log("Sample records (first 5):");
-            data.data.slice(0, 5).forEach((record: any, index: number) => {
-              console.log(`Record ${index}:`, {
-                tanggal: record.tanggal,
-                nama: record.nama,
-                kelas: record.kelas,
-                nisn: record.nisn,
-                status: record.status,
-              });
-            });
-          }
-
-          // Filter data yang valid
-          const validData = filterValidAttendance(data.data || []);
-          console.log("Valid records after filter:", validData.length);
-
-          // Cek unique NISN dalam data
-          const uniqueNISN = new Set(
-            validData.map((r) => String(r.nisn || "").trim())
-          );
-          console.log(
-            "Unique NISN in attendance data:",
-            Array.from(uniqueNISN)
-          );
-
-          // Cek unique tanggal
-          const uniqueDates = new Set(validData.map((r) => r.tanggal));
-          console.log("Unique dates:", Array.from(uniqueDates).sort());
-
-          setAttendanceData(validData);
-        } else {
-          alert("❌ Gagal memuat data absensi: " + data.message);
-          setAttendanceData([]);
-        }
-        setLoading(false);
-      })
-      .catch((error) => {
-        console.error("Error fetch:", error);
-        alert("❌ Gagal memuat data absensi. Cek console untuk detail.");
-        setLoading(false);
-      });
-  }, []);
 
   // Fetch tanggal merah
   useEffect(() => {
@@ -8532,16 +8475,15 @@ const DaftarHadirTab: React.FC<{
     return !isSundayDay && !isTglMerah && !isLiburSem && !isJadwal;
   };
 
-  // Fetch jadwal mengajar - PRIORITAS TINGGI
+  // Jadwal: sekali saat halaman dibuka
   useEffect(() => {
     fetchJadwalMengajar();
-  }, []); // Fetch sekali saat mount
+  }, []);
 
-  // Fetch attendance data - setelah jadwal ter-load
+  // Absensi: saat halaman dibuka dan setiap bulan/tahun berubah
   useEffect(() => {
-    if (loadingJadwal) return; // Tunggu jadwal selesai di-load
     fetchAttendanceData();
-  }, [loadingJadwal]); // Dependency: tunggu loading jadwal selesai
+  }, [selectedMonth, selectedYear]);
 
   const isInDateRange = (
     day: number,
@@ -8834,7 +8776,7 @@ const DaftarHadirTab: React.FC<{
         alert("✅ Perubahan berhasil disimpan!");
         setEditedRecords({});
         // Update data absensi secara dinamis tanpa reload halaman
-        fetchAttendanceData();
+        fetchAttendanceData(true);
       })
       .catch(() => alert("❌ Gagal menyimpan perubahan."))
       .finally(() => setIsSaving(false));
@@ -8887,7 +8829,7 @@ const DaftarHadirTab: React.FC<{
       });
 
       // Refresh data dari server
-      fetchAttendanceData();
+      fetchAttendanceData(true);
     } catch (error) {
       console.error("Error deleting student attendance:", error);
       alert("❌ Gagal menghapus riwayat absensi. Silakan coba lagi.");
@@ -8925,7 +8867,7 @@ const DaftarHadirTab: React.FC<{
           );
           setAttendanceData([]);
           setEditedRecords({});
-          fetchAttendanceData();
+          fetchAttendanceData(true);
         })
         .catch(() =>
           alert(
@@ -9710,6 +9652,19 @@ const DaftarHadirTab: React.FC<{
     doc.save(fileName);
   };
 
+  const confirmDiscardEdits = (): boolean => {
+    if (Object.keys(editedRecords).length === 0) return true;
+    if (
+      !confirm(
+        "Ada perubahan yang belum disimpan. Jika pindah bulan/tahun, perubahan akan dibuang. Lanjutkan?"
+      )
+    ) {
+      return false;
+    }
+    setEditedRecords({});
+    return true;
+  };
+
   const handleNameClick = (student: Student) => {
     setSelectedStudent(student);
     setShowModal(true);
@@ -9720,7 +9675,7 @@ const DaftarHadirTab: React.FC<{
     setSelectedStudent(null);
   };
 
-  if (loading) {
+  if (loading || loadingJadwal) {
     return (
       <div className="text-center py-8">
         <p className="text-gray-500">Memuat data...</p>
@@ -9753,8 +9708,12 @@ const DaftarHadirTab: React.FC<{
             <p className="text-sm text-gray-500 mb-2">Bulan</p>
             <select
               value={selectedMonth}
-              onChange={(e) => setSelectedMonth(Number(e.target.value))}
-              className="border border-gray-300 rounded-lg px-1 py-0.5 shadow-sm bg-white min-w-32"
+              onChange={(e) => {
+                if (!confirmDiscardEdits()) return;
+                setSelectedMonth(Number(e.target.value));
+              }}
+              disabled={loadingMonth}
+              className="border border-gray-300 rounded-lg px-1 py-0.5 shadow-sm bg-white min-w-32 disabled:opacity-50"
             >
               {months.map((m) => (
                 <option key={m.value} value={m.value}>
@@ -9767,8 +9726,12 @@ const DaftarHadirTab: React.FC<{
             <p className="text-sm text-gray-500 mb-2">Tahun</p>
             <select
               value={selectedYear}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="border border-gray-300 rounded-lg px-1 py-0.5 shadow-sm bg-white min-w-32"
+              onChange={(e) => {
+                if (!confirmDiscardEdits()) return;
+                setSelectedYear(Number(e.target.value));
+              }}
+              disabled={loadingMonth}
+              className="border border-gray-300 rounded-lg px-1 py-0.5 shadow-sm bg-white min-w-32 disabled:opacity-50"
             >
               {years.map((y) => (
                 <option key={y} value={y}>
@@ -10023,6 +9986,16 @@ const DaftarHadirTab: React.FC<{
           </div>
         </div>
 
+        {loadingMonth && (
+          <div className="mb-3 bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
+            <span className="text-blue-700 text-sm font-semibold">
+              ⏳ Memuat data{" "}
+              {months.find((m) => m.value === selectedMonth)?.label}{" "}
+              {selectedYear}...
+            </span>
+          </div>
+        )}
+
         <div className="overflow-auto relative" style={{ maxHeight: "70vh" }}>
           <style>
             {`
@@ -10038,6 +10011,7 @@ const DaftarHadirTab: React.FC<{
     top: 33px;
     z-index: 30;
     background: #f3f4f6 !important;
+  }
   
   .attendance-table th.freeze-no,
   .attendance-table td.freeze-no {
