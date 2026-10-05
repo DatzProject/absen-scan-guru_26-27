@@ -7718,28 +7718,21 @@ const StudentAttendanceApp: React.FC = () => {
     | "tanggalMerah"
     | "jadwalMengajar"
     | "clearData"
-  >(() =>
-    localStorage.getItem("authRole") === "Siswa" ? "attendance" : "studentData"
-  );
+  >("studentData");
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [statusGuru, setStatusGuru] = useState<string | null>(null);
   const [loadingStudents, setLoadingStudents] = useState(true);
-  const [role, setRole] = useState<Role | null>(() => {
-    const saved = localStorage.getItem("authRole");
-    return saved === "Guru" || saved === "Siswa" ? saved : null;
-  });
+  const [role, setRole] = useState<Role | null>(null);
 
   const handleLogin = (r: Role) => {
-    localStorage.setItem("authRole", r);
     setRole(r);
     setActiveTab(r === "Siswa" ? "attendance" : "studentData");
     setIsSidebarOpen(false);
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("authRole");
     setRole(null);
     setIsSidebarOpen(false);
   };
