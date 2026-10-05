@@ -3529,14 +3529,29 @@ const AttendanceTab: React.FC<{
               <p className="text-sm text-gray-500 mb-2">Foto Kelas</p>
               <button
                 onClick={handleUploadFotoAbsensi}
-                disabled={isUploadingFoto || allStudentsHaveData}
+                disabled={
+                  isUploadingFoto || isLoadingExistingData || !!fotoAbsensiUrl
+                }
+                title={
+                  isLoadingExistingData
+                    ? "Sedang memuat data absensi..."
+                    : fotoAbsensiUrl
+                    ? "Foto kelas sudah ada. Hapus foto terlebih dahulu untuk mengganti."
+                    : ""
+                }
                 className={`px-4 py-2 rounded-lg font-semibold shadow-md transition-colors ${
-                  isUploadingFoto || allStudentsHaveData
-                    ? "bg-gray-400 cursor-not-allowed text-white"
+                  isUploadingFoto || isLoadingExistingData || fotoAbsensiUrl
+                    ? "bg-gray-400 opacity-50 cursor-not-allowed text-white"
                     : "bg-purple-600 hover:bg-purple-700 text-white"
                 }`}
               >
-                {isUploadingFoto ? "📤 Mengirim..." : "📷 Foto Kelas"}
+                {isUploadingFoto
+                  ? "📤 Mengirim..."
+                  : isLoadingExistingData
+                  ? "⏳ Memuat..."
+                  : fotoAbsensiUrl
+                  ? "✅ Foto Sudah Ada"
+                  : "📷 Foto Kelas"}
               </button>
             </div>
           )}
