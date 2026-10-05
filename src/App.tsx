@@ -2157,6 +2157,8 @@ const AttendanceTab: React.FC<{
   const [previewFoto, setPreviewFoto] = useState<string | null>(null);
   const [fotoToUpload, setFotoToUpload] = useState<string | null>(null);
   const [isDeletingFoto, setIsDeletingFoto] = useState<boolean>(false);
+  const [showFotoSourceModal, setShowFotoSourceModal] =
+    useState<boolean>(false);
   const [showFotoFullscreen, setShowFotoFullscreen] = useState<boolean>(false);
   const [keterangan, setKeterangan] = useState<{
     [date: string]: { [studentId: string]: string };
@@ -2487,38 +2489,45 @@ const AttendanceTab: React.FC<{
     }
   };
 
-  const handleUploadFotoAbsensi = async () => {
-    try {
-      // Buat input file yang hanya menerima foto dari kamera
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = "image/*";
-      input.capture = "environment"; // Langsung buka kamera
-
-      input.onchange = async (e: any) => {
-        const file = e.target.files?.[0];
-        if (!file) {
-          return;
-        }
-
-        try {
-          // Kompres foto
-          const compressedBase64 = await compressImage(file, 2); // Max 2MB
-
-          // Tampilkan preview
-          setPreviewFoto(compressedBase64);
-          setFotoToUpload(compressedBase64.split(",")[1]); // Simpan base64 tanpa header
-        } catch (error) {
-          console.error("Error processing foto:", error);
-          alert("❌ Gagal memproses foto");
-        }
-      };
-
-      input.click();
-    } catch (error) {
-      console.error("Error uploading foto:", error);
-      alert("❌ Gagal mengupload foto");
+  // Dipanggil saat tombol "Foto Kelas" diklik
+  const handleUploadFotoAbsensi = () => {
+    if (role === "Guru") {
+      // Guru: tampilkan pilihan kamera / galeri
+      setShowFotoSourceModal(true);
+    } else {
+      // Siswa: langsung kamera
+      openFotoPicker("camera");
     }
+  };
+
+  // Membuka kamera atau galeri
+  const openFotoPicker = (source: "camera" | "gallery") => {
+    setShowFotoSourceModal(false);
+
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+
+    // capture hanya diset jika memilih kamera
+    if (source === "camera") {
+      input.setAttribute("capture", "environment");
+    }
+
+    input.onchange = async (e: any) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      try {
+        const compressedBase64 = await compressImage(file, 2); // Max 2MB
+        setPreviewFoto(compressedBase64);
+        setFotoToUpload(compressedBase64.split(",")[1]);
+      } catch (error) {
+        console.error("Error processing foto:", error);
+        alert("❌ Gagal memproses foto");
+      }
+    };
+
+    input.click();
   };
 
   // Fungsi untuk konfirmasi upload
@@ -3529,6 +3538,43 @@ const AttendanceTab: React.FC<{
               >
                 {isUploadingFoto ? "📤 Mengirim..." : "📷 Foto Kelas"}
               </button>
+            </div>
+          )}
+
+          {/* MODAL PILIHAN SUMBER FOTO (khusus Guru) */}
+          {showFotoSourceModal && (
+            <div
+              className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+              onClick={() => setShowFotoSourceModal(false)}
+            >
+              <div
+                className="bg-white rounded-lg shadow-xl w-full max-w-xs p-6"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h3 className="text-lg font-bold text-gray-800 mb-4 text-center">
+                  📷 Ambil Foto Kelas
+                </h3>
+                <div className="flex flex-col gap-3">
+                  <button
+                    onClick={() => openFotoPicker("camera")}
+                    className="w-full px-4 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition-colors"
+                  >
+                    📸 Buka Kamera
+                  </button>
+                  <button
+                    onClick={() => openFotoPicker("gallery")}
+                    className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors"
+                  >
+                    🖼️ Pilih dari Galeri
+                  </button>
+                  <button
+                    onClick={() => setShowFotoSourceModal(false)}
+                    className="w-full px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-medium transition-colors"
+                  >
+                    Batal
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
